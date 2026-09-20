@@ -123,6 +123,39 @@ func TestSMTPMailer_GetFrom(t *testing.T) {
 	}
 }
 
+func TestSMTPMailer_From_OverridesSenderButNotAuth(t *testing.T) {
+	// When From is set, it becomes the effective sender while Email remains the
+	// auth username. This is the Plunk case: auth username "plunk", sender a
+	// verified address.
+	mailer := NewSMTPMailer("smtp.useplunk.com", 587, "plunk", "secret")
+
+	if got := mailer.GetFrom(); got != "plunk" {
+		t.Fatalf("GetFrom() with no From set = %q, want fallback to Email %q", got, "plunk")
+	}
+
+	mailer.SetFrom("noreply@example.com")
+
+	if got := mailer.GetFrom(); got != "noreply@example.com" {
+		t.Errorf("GetFrom() after SetFrom = %q, want %q", got, "noreply@example.com")
+	}
+	if mailer.Email != "plunk" {
+		t.Errorf("Email (auth username) = %q, want it unchanged as %q", mailer.Email, "plunk")
+	}
+}
+
+func TestSMTPMailer_From_EmptyFallsBackToEmail(t *testing.T) {
+	// Regression guard: with From unset, behavior is identical to before —
+	// GetFrom returns Email.
+	mailer := NewSMTPMailer("smtp.example.com", 587, "user@example.com", "pass")
+
+	if mailer.From != "" {
+		t.Fatalf("From = %q, want empty default", mailer.From)
+	}
+	if got := mailer.GetFrom(); got != "user@example.com" {
+		t.Errorf("GetFrom() = %q, want %q", got, "user@example.com")
+	}
+}
+
 func TestSMTPMailer_InterfaceCompliance(t *testing.T) {
 	// Verify that SMTPMailer implements Mailer interface
 	var _ Mailer = &SMTPMailer{}

@@ -174,6 +174,34 @@ func TestGmailMailer_GetFrom(t *testing.T) {
 	}
 }
 
+func TestGmailMailer_From_OverridesSenderButNotAuth(t *testing.T) {
+	mailer := NewGmailMailer("account@gmail.com", "app-password")
+
+	if got := mailer.GetFrom(); got != "account@gmail.com" {
+		t.Fatalf("GetFrom() with no From set = %q, want fallback to Email", got)
+	}
+
+	mailer.SetFrom("noreply@company.com")
+
+	if got := mailer.GetFrom(); got != "noreply@company.com" {
+		t.Errorf("GetFrom() after SetFrom = %q, want %q", got, "noreply@company.com")
+	}
+	if mailer.Email != "account@gmail.com" {
+		t.Errorf("Email (auth username) = %q, want it unchanged", mailer.Email)
+	}
+}
+
+func TestGmailMailer_From_EmptyFallsBackToEmail(t *testing.T) {
+	mailer := NewGmailMailer("user@gmail.com", "password")
+
+	if mailer.From != "" {
+		t.Fatalf("From = %q, want empty default", mailer.From)
+	}
+	if got := mailer.GetFrom(); got != "user@gmail.com" {
+		t.Errorf("GetFrom() = %q, want %q", got, "user@gmail.com")
+	}
+}
+
 func TestGmailMailer_InterfaceCompliance(t *testing.T) {
 	// Verify that GmailMailer implements Mailer interface
 	var _ Mailer = &GmailMailer{}

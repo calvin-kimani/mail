@@ -12,10 +12,14 @@ var _ Mailer = &GmailMailer{}
 // GmailMailer is a mail service implementation that sends emails through Gmail's SMTP server.
 // It uses the standard SMTP protocol with Gmail's servers (smtp.gmail.com:587).
 type GmailMailer struct {
-	Email    string // Gmail email address
+	Email    string // Gmail email address (used for authentication and, by default, as the sender)
 	Password string // Gmail app password (not regular password)
 	Host     string // SMTP host (default: smtp.gmail.com)
 	Port     int    // SMTP port (default: 587)
+	// From overrides the sender address in the From header and SMTP envelope.
+	// When empty it falls back to Email — the normal case for Gmail, where the
+	// account address is also the sender.
+	From string
 }
 
 // NewGmailMailer creates a new Gmail mailer for the given account.
@@ -50,11 +54,13 @@ func (g *GmailMailer) Send(msg Message) error {
 	}
 	m := gomail.NewMessage()
 
-	// Set From header using the mailer's configured address with optional display name
+	// Set From header using the effective sender address with optional display
+	// name. Authentication below still uses g.Email.
+	fromAddr := g.effectiveFrom()
 	if fromName := msg.GetFromName(); fromName != "" {
-		m.SetAddressHeader("From", g.Email, fromName)
+		m.SetAddressHeader("From", fromAddr, fromName)
 	} else {
-		m.SetHeader("From", g.Email)
+		m.SetHeader("From", fromAddr)
 	}
 
 	m.SetHeader("To", msg.GetTo()...)
@@ -82,7 +88,23 @@ func (g *GmailMailer) Send(msg Message) error {
 	return d.DialAndSend(m)
 }
 
-// GetFrom returns the Gmail account's email address.
+// SetFrom sets the sender address used in the From header and SMTP envelope,
+// independent of the authentication email (Email).
+func (g *GmailMailer) SetFrom(addr string) {
+	g.From = addr
+}
+
+// GetFrom returns the effective sender address — From when set, otherwise the
+// Gmail account's email address.
 func (g *GmailMailer) GetFrom() string {
+	return g.effectiveFrom()
+}
+
+// effectiveFrom resolves the sender address, falling back to the account email
+// when no explicit From is configured.
+func (g *GmailMailer) effectiveFrom() string {
+	if g.From != "" {
+		return g.From
+	}
 	return g.Email
 }

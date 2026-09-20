@@ -14,8 +14,13 @@ var _ Mailer = &SMTPMailer{}
 type SMTPMailer struct {
 	Host  string // SMTP server hostname (e.g., "smtp.gmail.com", "smtp.office365.com")
 	Port  int    // SMTP server port (typically 587 for TLS, 465 for SSL, or 25 for unencrypted)
-	Email string // SMTP email/username (usually the email address)
+	Email string // SMTP email/username used for authentication (often, but not always, the sender address)
 	Pass  string // SMTP password or app-specific password
+	// From is the sender address placed in the From header and SMTP envelope.
+	// When empty it falls back to Email. Set this when the auth username is not
+	// itself a valid sender address — e.g. Plunk, whose SMTP username is the
+	// literal string "plunk" while the sender must be a verified email address.
+	From string
 }
 
 // NewSMTPMailer creates a new SMTP mailer from explicit connection settings:
@@ -53,11 +58,15 @@ func (s *SMTPMailer) Send(msg Message) error {
 	}
 	m := gomail.NewMessage()
 
-	// Set From header using the mailer's configured address with optional display name
+	// Set From header using the effective sender address with optional display
+	// name. The auth username (s.Email) may differ from the sender address, so
+	// prefer s.From when set. gomail derives the SMTP envelope MAIL FROM from
+	// this header, while authentication below still uses s.Email.
+	fromAddr := s.effectiveFrom()
 	if fromName := msg.GetFromName(); fromName != "" {
-		m.SetAddressHeader("From", s.Email, fromName)
+		m.SetAddressHeader("From", fromAddr, fromName)
 	} else {
-		m.SetHeader("From", s.Email)
+		m.SetHeader("From", fromAddr)
 	}
 
 	m.SetHeader("To", msg.GetTo()...)
@@ -77,7 +86,24 @@ func (s *SMTPMailer) Send(msg Message) error {
 	return d.DialAndSend(m)
 }
 
-// GetFrom returns the SMTP account's email address.
+// SetFrom sets the sender address used in the From header and SMTP envelope.
+// This is independent of the authentication username (Email): set it when the
+// auth username is not a valid sender address, e.g. Plunk.
+func (s *SMTPMailer) SetFrom(addr string) {
+	s.From = addr
+}
+
+// GetFrom returns the effective sender address — From when set, otherwise the
+// authentication email.
 func (s *SMTPMailer) GetFrom() string {
+	return s.effectiveFrom()
+}
+
+// effectiveFrom resolves the sender address, falling back to the auth email
+// when no explicit From is configured.
+func (s *SMTPMailer) effectiveFrom() string {
+	if s.From != "" {
+		return s.From
+	}
 	return s.Email
 }
